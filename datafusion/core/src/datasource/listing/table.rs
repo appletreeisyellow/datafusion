@@ -490,7 +490,7 @@ impl ListingOptions {
 ///
 /// # Features
 ///
-/// 1. Merges schemas if the files have compatible but not indentical schemas
+/// 1. Merges schemas if the files have compatible but not identical schemas
 ///
 /// 2. Hive-style partitioning support, where a path such as
 /// `/files/date=1/1/2022/data.parquet` is injected as a `date` column.
@@ -685,7 +685,7 @@ impl TableProvider for ListingTable {
         if partitioned_file_lists.is_empty() {
             let schema = self.schema();
             let projected_schema = project_schema(&schema, projection)?;
-            return Ok(Arc::new(EmptyExec::new(false, projected_schema)));
+            return Ok(Arc::new(EmptyExec::new(projected_schema)));
         }
 
         // extract types of partition columns
@@ -713,7 +713,7 @@ impl TableProvider for ListingTable {
         let object_store_url = if let Some(url) = self.table_paths.first() {
             url.object_store()
         } else {
-            return Ok(Arc::new(EmptyExec::new(false, Arc::new(Schema::empty()))));
+            return Ok(Arc::new(EmptyExec::new(Arc::new(Schema::empty()))));
         };
         // create the execution plan
         self.options
