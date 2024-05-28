@@ -128,7 +128,7 @@ impl ScalarUDFImpl for ToLocalTimeFunc {
             Timestamp(Millisecond, _) => Ok(Timestamp(Millisecond, None)),
             Timestamp(Second, _) => Ok(Timestamp(Second, None)),
             _ => exec_err!(
-                "The date_bin function can only accept timestamp as the second arg."
+                "The to_local_time function can only accept timestamp as the second arg."
             ),
         }
     }
@@ -140,6 +140,7 @@ impl ScalarUDFImpl for ToLocalTimeFunc {
             );
         }
 
+        // TODO chunchun: support more input data types
         self.to_local_time(args)
     }
 }
