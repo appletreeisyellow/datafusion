@@ -32,6 +32,7 @@ pub mod make_date;
 pub mod now;
 pub mod to_char;
 pub mod to_date;
+pub mod to_local_time;
 pub mod to_timestamp;
 pub mod to_unixtime;
 
