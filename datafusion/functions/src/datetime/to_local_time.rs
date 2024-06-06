@@ -16,11 +16,14 @@
 // under the License.
 
 use std::any::Any;
+use std::ops::Add;
 
+use arrow::array::timezone::Tz;
 use arrow::datatypes::DataType;
 use arrow::datatypes::DataType::Timestamp;
 use arrow::datatypes::TimeUnit::{Microsecond, Millisecond, Nanosecond, Second};
 
+use chrono::{DateTime, Offset, TimeDelta, TimeZone};
 use datafusion_common::{exec_err, Result, ScalarValue};
 use datafusion_expr::{ColumnarValue, ScalarUDFImpl, Signature, Volatility};
 
@@ -57,36 +60,53 @@ impl ToLocalTimeFunc {
                 // if no timezone specificed, just return the input
                 Ok(time_value.clone())
             }
-            // if has timezone, then remove the timezone in return type, keep the time value the same
+            // if has timezone, adjust the underlying time value. the current time value
+            // is stored as i64 in UTC, even though the timezone may not be in UTC, so
+            // we need to adjust the time value to the local time. see [`adjust_to_local_time`]
+            // for more details.
+            //
+            // Then remove the timezone in return type, i.e. return None
             DataType::Timestamp(_, Some(_)) => match time_value {
                 ColumnarValue::Scalar(ScalarValue::TimestampSecond(
                     Some(ts),
-                    Some(_),
-                )) => Ok(ColumnarValue::Scalar(ScalarValue::TimestampSecond(
-                    Some(ts),
-                    None,
-                ))),
+                    Some(tz),
+                )) => {
+                    let adjusted_ts = adjust_to_local_time(ts, &*tz);
+                    Ok(ColumnarValue::Scalar(ScalarValue::TimestampSecond(
+                        Some(adjusted_ts),
+                        None,
+                    )))
+                }
                 ColumnarValue::Scalar(ScalarValue::TimestampNanosecond(
                     Some(ts),
-                    Some(_),
-                )) => Ok(ColumnarValue::Scalar(ScalarValue::TimestampNanosecond(
-                    Some(ts),
-                    None,
-                ))),
+                    Some(tz),
+                )) => {
+                    let adjusted_ts = adjust_to_local_time(ts, &*tz);
+                    Ok(ColumnarValue::Scalar(ScalarValue::TimestampNanosecond(
+                        Some(adjusted_ts),
+                        None,
+                    )))
+                }
                 ColumnarValue::Scalar(ScalarValue::TimestampMillisecond(
                     Some(ts),
-                    Some(_),
-                )) => Ok(ColumnarValue::Scalar(ScalarValue::TimestampMillisecond(
-                    Some(ts),
-                    None,
-                ))),
+                    Some(tz),
+                )) => {
+                    let adjusted_ts = adjust_to_local_time(ts, &*tz);
+                    Ok(ColumnarValue::Scalar(ScalarValue::TimestampMillisecond(
+                        Some(adjusted_ts),
+                        None,
+                    )))
+                }
                 ColumnarValue::Scalar(ScalarValue::TimestampMicrosecond(
                     Some(ts),
-                    Some(_),
-                )) => Ok(ColumnarValue::Scalar(ScalarValue::TimestampMicrosecond(
-                    Some(ts),
-                    None,
-                ))),
+                    Some(tz),
+                )) => {
+                    let adjusted_ts = adjust_to_local_time(ts, &*tz);
+                    Ok(ColumnarValue::Scalar(ScalarValue::TimestampMicrosecond(
+                        Some(adjusted_ts),
+                        None,
+                    )))
+                }
                 _ => {
                     exec_err!(
                         "to_local_time function requires timestamp argument, got {:?}",
@@ -102,6 +122,27 @@ impl ToLocalTimeFunc {
             }
         }
     }
+}
+
+fn adjust_to_local_time(ts: i64, timezone: &str) -> i64 {
+    let tz: Tz = timezone.parse().unwrap();
+
+    let date_time = DateTime::from_timestamp_nanos(ts).naive_utc();
+
+    let offset_seconds: i64 = tz
+        .offset_from_utc_datetime(&date_time)
+        .fix()
+        .local_minus_utc() as i64;
+
+    let adjusted_date_time =
+        date_time.add(TimeDelta::try_seconds(offset_seconds).unwrap());
+    let adjusted_ts = adjusted_date_time.and_utc().timestamp_nanos_opt().unwrap();
+
+    // println!(
+    //     "chunchun - adjust_to_local_time:\ninput timestamp: {:?}\nin NavieDateTime: {:?}\noffset: {:?}\nadjusted_date_time: {:?}\nadjusted_ts: {:?}\n",
+    //     ts, date_time, offset_seconds, adjusted_date_time, adjusted_ts
+    // );
+    adjusted_ts
 }
 
 impl ScalarUDFImpl for ToLocalTimeFunc {
@@ -128,7 +169,7 @@ impl ScalarUDFImpl for ToLocalTimeFunc {
             Timestamp(Millisecond, _) => Ok(Timestamp(Millisecond, None)),
             Timestamp(Second, _) => Ok(Timestamp(Second, None)),
             _ => exec_err!(
-                "The to_local_time function can only accept timestamp as the second arg."
+                "The to_local_time function can only accept timestamp as the arg."
             ),
         }
     }
@@ -140,7 +181,6 @@ impl ScalarUDFImpl for ToLocalTimeFunc {
             );
         }
 
-        // TODO chunchun: support more input data types
         self.to_local_time(args)
     }
 }
@@ -166,15 +206,22 @@ mod tests {
         assert!(res.is_ok());
 
         let res = ToLocalTimeFunc::new().invoke(&[ColumnarValue::Scalar(
-            ScalarValue::TimestampNanosecond(Some(1), Some("America/New_York".into())),
+            ScalarValue::TimestampNanosecond(Some(1), Some("Europe/Brussels".into())),
         )]);
         assert!(res.is_ok());
 
         let res = ToLocalTimeFunc::new().invoke(&[ColumnarValue::Scalar(
-            // 2021-03-28T02:30:00-04:00
+            ScalarValue::TimestampSecond(
+                Some(2_000_000_000), // 2033-05-18T03:33:20Z
+                Some("Europe/Brussels".into()),
+            ),
+        )]);
+        assert!(res.is_ok());
+
+        let res = ToLocalTimeFunc::new().invoke(&[ColumnarValue::Scalar(
             ScalarValue::TimestampNanosecond(
-                Some(1616916600),
-                Some("America/New_York".into()),
+                Some(1711922401000000000),      // 2024-03-31T22:00:01Z
+                Some("Europe/Brussels".into()), // 2024-04-01T00:00:01+02:00
             ),
         )]);
         assert!(res.is_ok());
