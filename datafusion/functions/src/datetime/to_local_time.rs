@@ -71,7 +71,7 @@ impl ToLocalTimeFunc {
                     Some(ts),
                     Some(tz),
                 )) => {
-                    let adjusted_ts = adjust_to_local_time(ts, &*tz);
+                    let adjusted_ts = adjust_to_local_time(ts, &tz);
                     Ok(ColumnarValue::Scalar(ScalarValue::TimestampSecond(
                         Some(adjusted_ts),
                         None,
@@ -81,7 +81,7 @@ impl ToLocalTimeFunc {
                     Some(ts),
                     Some(tz),
                 )) => {
-                    let adjusted_ts = adjust_to_local_time(ts, &*tz);
+                    let adjusted_ts = adjust_to_local_time(ts, &tz);
                     Ok(ColumnarValue::Scalar(ScalarValue::TimestampNanosecond(
                         Some(adjusted_ts),
                         None,
@@ -91,7 +91,7 @@ impl ToLocalTimeFunc {
                     Some(ts),
                     Some(tz),
                 )) => {
-                    let adjusted_ts = adjust_to_local_time(ts, &*tz);
+                    let adjusted_ts = adjust_to_local_time(ts, &tz);
                     Ok(ColumnarValue::Scalar(ScalarValue::TimestampMillisecond(
                         Some(adjusted_ts),
                         None,
@@ -101,7 +101,7 @@ impl ToLocalTimeFunc {
                     Some(ts),
                     Some(tz),
                 )) => {
-                    let adjusted_ts = adjust_to_local_time(ts, &*tz);
+                    let adjusted_ts = adjust_to_local_time(ts, &tz);
                     Ok(ColumnarValue::Scalar(ScalarValue::TimestampMicrosecond(
                         Some(adjusted_ts),
                         None,
@@ -124,7 +124,7 @@ impl ToLocalTimeFunc {
     }
 }
 
-fn adjust_to_local_time(ts: i64, timezone: &str) -> i64 {
+pub fn adjust_to_local_time(ts: i64, timezone: &str) -> i64 {
     let tz: Tz = timezone.parse().unwrap();
 
     let date_time = DateTime::from_timestamp_nanos(ts).naive_utc();
@@ -136,13 +136,13 @@ fn adjust_to_local_time(ts: i64, timezone: &str) -> i64 {
 
     let adjusted_date_time =
         date_time.add(TimeDelta::try_seconds(offset_seconds).unwrap());
-    let adjusted_ts = adjusted_date_time.and_utc().timestamp_nanos_opt().unwrap();
 
+    // let adjusted_ts = adjusted_date_time.and_utc().timestamp_nanos_opt().unwrap();
     // println!(
     //     "chunchun - adjust_to_local_time:\ninput timestamp: {:?}\nin NavieDateTime: {:?}\noffset: {:?}\nadjusted_date_time: {:?}\nadjusted_ts: {:?}\n",
     //     ts, date_time, offset_seconds, adjusted_date_time, adjusted_ts
     // );
-    adjusted_ts
+    adjusted_date_time.and_utc().timestamp_nanos_opt().unwrap()
 }
 
 impl ScalarUDFImpl for ToLocalTimeFunc {
