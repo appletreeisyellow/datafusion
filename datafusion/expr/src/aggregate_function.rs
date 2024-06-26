@@ -47,18 +47,6 @@ pub enum AggregateFunction {
     Correlation,
     /// Grouping
     Grouping,
-    /// Bit And
-    BitAnd,
-    /// Bit Or
-    BitOr,
-    /// Bit Xor
-    BitXor,
-    /// Bool And
-    BoolAnd,
-    /// Bool Or
-    BoolOr,
-    /// String aggregation
-    StringAgg,
 }
 
 impl AggregateFunction {
@@ -72,12 +60,6 @@ impl AggregateFunction {
             NthValue => "NTH_VALUE",
             Correlation => "CORR",
             Grouping => "GROUPING",
-            BitAnd => "BIT_AND",
-            BitOr => "BIT_OR",
-            BitXor => "BIT_XOR",
-            BoolAnd => "BOOL_AND",
-            BoolOr => "BOOL_OR",
-            StringAgg => "STRING_AGG",
         }
     }
 }
@@ -94,17 +76,11 @@ impl FromStr for AggregateFunction {
         Ok(match name {
             // general
             "avg" => AggregateFunction::Avg,
-            "bit_and" => AggregateFunction::BitAnd,
-            "bit_or" => AggregateFunction::BitOr,
-            "bit_xor" => AggregateFunction::BitXor,
-            "bool_and" => AggregateFunction::BoolAnd,
-            "bool_or" => AggregateFunction::BoolOr,
             "max" => AggregateFunction::Max,
             "mean" => AggregateFunction::Avg,
             "min" => AggregateFunction::Min,
             "array_agg" => AggregateFunction::ArrayAgg,
             "nth_value" => AggregateFunction::NthValue,
-            "string_agg" => AggregateFunction::StringAgg,
             // statistical
             "corr" => AggregateFunction::Correlation,
             // other
@@ -144,12 +120,6 @@ impl AggregateFunction {
                 // The coerced_data_types is same with input_types.
                 Ok(coerced_data_types[0].clone())
             }
-            AggregateFunction::BitAnd
-            | AggregateFunction::BitOr
-            | AggregateFunction::BitXor => Ok(coerced_data_types[0].clone()),
-            AggregateFunction::BoolAnd | AggregateFunction::BoolOr => {
-                Ok(DataType::Boolean)
-            }
             AggregateFunction::Correlation => {
                 correlation_return_type(&coerced_data_types[0])
             }
@@ -161,7 +131,6 @@ impl AggregateFunction {
             )))),
             AggregateFunction::Grouping => Ok(DataType::Int32),
             AggregateFunction::NthValue => Ok(coerced_data_types[0].clone()),
-            AggregateFunction::StringAgg => Ok(DataType::LargeUtf8),
         }
     }
 }
@@ -199,24 +168,12 @@ impl AggregateFunction {
                     .collect::<Vec<_>>();
                 Signature::uniform(1, valid, Volatility::Immutable)
             }
-            AggregateFunction::BitAnd
-            | AggregateFunction::BitOr
-            | AggregateFunction::BitXor => {
-                Signature::uniform(1, INTEGERS.to_vec(), Volatility::Immutable)
-            }
-            AggregateFunction::BoolAnd | AggregateFunction::BoolOr => {
-                Signature::uniform(1, vec![DataType::Boolean], Volatility::Immutable)
-            }
-
             AggregateFunction::Avg => {
                 Signature::uniform(1, NUMERICS.to_vec(), Volatility::Immutable)
             }
             AggregateFunction::NthValue => Signature::any(2, Volatility::Immutable),
             AggregateFunction::Correlation => {
                 Signature::uniform(2, NUMERICS.to_vec(), Volatility::Immutable)
-            }
-            AggregateFunction::StringAgg => {
-                Signature::uniform(2, STRINGS.to_vec(), Volatility::Immutable)
             }
         }
     }

@@ -111,16 +111,10 @@ impl From<&AggregateFunction> for protobuf::AggregateFunction {
             AggregateFunction::Min => Self::Min,
             AggregateFunction::Max => Self::Max,
             AggregateFunction::Avg => Self::Avg,
-            AggregateFunction::BitAnd => Self::BitAnd,
-            AggregateFunction::BitOr => Self::BitOr,
-            AggregateFunction::BitXor => Self::BitXor,
-            AggregateFunction::BoolAnd => Self::BoolAnd,
-            AggregateFunction::BoolOr => Self::BoolOr,
             AggregateFunction::ArrayAgg => Self::ArrayAgg,
             AggregateFunction::Correlation => Self::Correlation,
             AggregateFunction::Grouping => Self::Grouping,
             AggregateFunction::NthValue => Self::NthValueAgg,
-            AggregateFunction::StringAgg => Self::StringAgg,
         }
     }
 }
@@ -380,11 +374,6 @@ pub fn serialize_expr(
                     AggregateFunction::ArrayAgg => protobuf::AggregateFunction::ArrayAgg,
                     AggregateFunction::Min => protobuf::AggregateFunction::Min,
                     AggregateFunction::Max => protobuf::AggregateFunction::Max,
-                    AggregateFunction::BitAnd => protobuf::AggregateFunction::BitAnd,
-                    AggregateFunction::BitOr => protobuf::AggregateFunction::BitOr,
-                    AggregateFunction::BitXor => protobuf::AggregateFunction::BitXor,
-                    AggregateFunction::BoolAnd => protobuf::AggregateFunction::BoolAnd,
-                    AggregateFunction::BoolOr => protobuf::AggregateFunction::BoolOr,
                     AggregateFunction::Avg => protobuf::AggregateFunction::Avg,
                     AggregateFunction::Correlation => {
                         protobuf::AggregateFunction::Correlation
@@ -392,9 +381,6 @@ pub fn serialize_expr(
                     AggregateFunction::Grouping => protobuf::AggregateFunction::Grouping,
                     AggregateFunction::NthValue => {
                         protobuf::AggregateFunction::NthValueAgg
-                    }
-                    AggregateFunction::StringAgg => {
-                        protobuf::AggregateFunction::StringAgg
                     }
                 };
 
