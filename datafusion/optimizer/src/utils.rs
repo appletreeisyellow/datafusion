@@ -17,7 +17,7 @@
 
 //! Utility functions leveraged by the query optimizer rules
 
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeSet, HashMap, HashSet};
 
 use crate::{OptimizerConfig, OptimizerRule};
 
@@ -66,15 +66,26 @@ pub fn optimize_children(
     }
 }
 
+/// Returns true if `expr` contains all columns in `schema_cols`
+pub(crate) fn has_all_column_refs(expr: &Expr, schema_cols: &HashSet<Column>) -> bool {
+    let column_refs = expr.column_refs();
+    // note can't use HashSet::intersect because of different types (owned vs References)
+    schema_cols
+        .iter()
+        .filter(|c| column_refs.contains(c))
+        .count()
+        == column_refs.len()
+}
+
 pub(crate) fn collect_subquery_cols(
     exprs: &[Expr],
     subquery_schema: DFSchemaRef,
 ) -> Result<BTreeSet<Column>> {
     exprs.iter().try_fold(BTreeSet::new(), |mut cols, expr| {
         let mut using_cols: Vec<Column> = vec![];
-        for col in expr.to_columns()?.into_iter() {
-            if subquery_schema.has_column(&col) {
-                using_cols.push(col);
+        for col in expr.column_refs().into_iter() {
+            if subquery_schema.has_column(col) {
+                using_cols.push(col.clone());
             }
         }
 
@@ -166,13 +177,13 @@ pub fn split_conjunction_owned(expr: Expr) -> Vec<Expr> {
 /// ];
 ///
 /// // use split_binary_owned to split them
-/// assert_eq!(split_binary_owned(expr, Operator::Plus), split);
+/// assert_eq!(split_binary_owned(expr, &Operator::Plus), split);
 /// ```
 #[deprecated(
     since = "34.0.0",
     note = "use `datafusion_expr::utils::split_binary_owned` instead"
 )]
-pub fn split_binary_owned(expr: Expr, op: Operator) -> Vec<Expr> {
+pub fn split_binary_owned(expr: Expr, op: &Operator) -> Vec<Expr> {
     expr_utils::split_binary_owned(expr, op)
 }
 
@@ -183,7 +194,7 @@ pub fn split_binary_owned(expr: Expr, op: Operator) -> Vec<Expr> {
     since = "34.0.0",
     note = "use `datafusion_expr::utils::split_binary` instead"
 )]
-pub fn split_binary(expr: &Expr, op: Operator) -> Vec<&Expr> {
+pub fn split_binary<'a>(expr: &'a Expr, op: &Operator) -> Vec<&'a Expr> {
     expr_utils::split_binary(expr, op)
 }
 

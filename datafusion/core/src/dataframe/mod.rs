@@ -26,6 +26,9 @@ use std::sync::Arc;
 
 use crate::arrow::record_batch::RecordBatch;
 use crate::arrow::util::pretty;
+use crate::datasource::file_format::csv::CsvFormatFactory;
+use crate::datasource::file_format::format_as_file_type;
+use crate::datasource::file_format::json::JsonFormatFactory;
 use crate::datasource::{provider_as_source, MemTable, TableProvider};
 use crate::error::Result;
 use crate::execution::context::{SessionState, TaskContext};
@@ -44,17 +47,15 @@ use arrow::array::{Array, ArrayRef, Int64Array, StringArray};
 use arrow::compute::{cast, concat};
 use arrow::datatypes::{DataType, Field};
 use arrow_schema::{Schema, SchemaRef};
-use datafusion_common::config::{CsvOptions, FormatOptions, JsonOptions};
+use datafusion_common::config::{CsvOptions, JsonOptions};
 use datafusion_common::{
     plan_err, Column, DFSchema, DataFusionError, ParamValues, SchemaError, UnnestOptions,
 };
-use datafusion_expr::lit;
+use datafusion_expr::{case, is_null, lit};
 use datafusion_expr::{
-    avg, max, min, utils::COUNT_STAR_EXPANSION, TableProviderFilterPushDown,
-    UNNAMED_TABLE,
+    max, min, utils::COUNT_STAR_EXPANSION, TableProviderFilterPushDown, UNNAMED_TABLE,
 };
-use datafusion_expr::{case, is_null};
-use datafusion_functions_aggregate::expr_fn::{count, median, stddev, sum};
+use datafusion_functions_aggregate::expr_fn::{avg, count, median, stddev, sum};
 
 use async_trait::async_trait;
 
@@ -175,6 +176,33 @@ impl DataFrame {
             session_state: Box::new(session_state),
             plan,
         }
+    }
+
+    /// Creates logical expression from a SQL query text.
+    /// The expression is created and processed againt the current schema.
+    ///
+    /// # Example: Parsing SQL queries
+    /// ```
+    /// # use arrow::datatypes::{DataType, Field, Schema};
+    /// # use datafusion::prelude::*;
+    /// # use datafusion_common::{DFSchema, Result};
+    /// # #[tokio::main]
+    /// # async fn main() -> Result<()> {
+    /// // datafusion will parse number as i64 first.
+    /// let sql = "a > 1 and b in (1, 10)";
+    /// let expected = col("a").gt(lit(1 as i64))
+    ///   .and(col("b").in_list(vec![lit(1 as i64), lit(10 as i64)], false));
+    /// let ctx = SessionContext::new();
+    /// let df = ctx.read_csv("tests/data/example.csv", CsvReadOptions::new()).await?;
+    /// let expr = df.parse_sql_expr(sql)?;
+    /// assert_eq!(expected, expr);
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn parse_sql_expr(&self, sql: &str) -> Result<Expr> {
+        let df_schema = self.schema();
+
+        self.session_state.create_logical_expr(sql, df_schema)
     }
 
     /// Consume the DataFrame and produce a physical plan
@@ -534,7 +562,7 @@ impl DataFrame {
     /// # async fn main() -> Result<()> {
     /// let ctx = SessionContext::new();
     /// let df = ctx.read_csv("tests/data/example.csv", CsvReadOptions::new()).await?
-    ///   // Return a single row (a, b) for each distinct value of a  
+    ///   // Return a single row (a, b) for each distinct value of a
     ///   .distinct_on(vec![col("a")], vec![col("a"), col("b")], None)?;
     /// # Ok(())
     /// # }
@@ -1304,13 +1332,19 @@ impl DataFrame {
                 "Overwrites are not implemented for DataFrame::write_csv.".to_owned(),
             ));
         }
-        let props = writer_options
-            .unwrap_or_else(|| self.session_state.default_table_options().csv);
+
+        let format = if let Some(csv_opts) = writer_options {
+            Arc::new(CsvFormatFactory::new_with_options(csv_opts))
+        } else {
+            Arc::new(CsvFormatFactory::new())
+        };
+
+        let file_type = format_as_file_type(format);
 
         let plan = LogicalPlanBuilder::copy_to(
             self.plan,
             path.into(),
-            FormatOptions::CSV(props),
+            file_type,
             HashMap::new(),
             options.partition_by,
         )?
@@ -1359,13 +1393,18 @@ impl DataFrame {
             ));
         }
 
-        let props = writer_options
-            .unwrap_or_else(|| self.session_state.default_table_options().json);
+        let format = if let Some(json_opts) = writer_options {
+            Arc::new(JsonFormatFactory::new_with_options(json_opts))
+        } else {
+            Arc::new(JsonFormatFactory::new())
+        };
+
+        let file_type = format_as_file_type(format);
 
         let plan = LogicalPlanBuilder::copy_to(
             self.plan,
             path.into(),
-            FormatOptions::JSON(props),
+            file_type,
             Default::default(),
             options.partition_by,
         )?
@@ -2018,7 +2057,7 @@ mod tests {
 
         assert_batches_sorted_eq!(
             ["+----+-----------------------------+-----------------------------+-----------------------------+-----------------------------+-------------------------------+----------------------------------------+",
-                "| c1 | MIN(aggregate_test_100.c12) | MAX(aggregate_test_100.c12) | AVG(aggregate_test_100.c12) | sum(aggregate_test_100.c12) | COUNT(aggregate_test_100.c12) | COUNT(DISTINCT aggregate_test_100.c12) |",
+                "| c1 | MIN(aggregate_test_100.c12) | MAX(aggregate_test_100.c12) | avg(aggregate_test_100.c12) | sum(aggregate_test_100.c12) | count(aggregate_test_100.c12) | count(DISTINCT aggregate_test_100.c12) |",
                 "+----+-----------------------------+-----------------------------+-----------------------------+-----------------------------+-------------------------------+----------------------------------------+",
                 "| a  | 0.02182578039211991         | 0.9800193410444061          | 0.48754517466109415         | 10.238448667882977          | 21                            | 21                                     |",
                 "| b  | 0.04893135681998029         | 0.9185813970744787          | 0.41040709263815384         | 7.797734760124923           | 19                            | 19                                     |",
@@ -3171,7 +3210,7 @@ mod tests {
 
         let sql = r#"
         SELECT
-            COUNT(1)
+            count(1)
         FROM
             test
         GROUP BY
@@ -3417,6 +3456,82 @@ mod tests {
             }
         }
 
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_except_nested_struct() -> Result<()> {
+        use arrow::array::StructArray;
+
+        let nested_schema = Arc::new(Schema::new(vec![
+            Field::new("id", DataType::Int32, true),
+            Field::new("lat", DataType::Int32, true),
+            Field::new("long", DataType::Int32, true),
+        ]));
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("value", DataType::Int32, true),
+            Field::new(
+                "nested",
+                DataType::Struct(nested_schema.fields.clone()),
+                true,
+            ),
+        ]));
+        let batch = RecordBatch::try_new(
+            Arc::clone(&schema),
+            vec![
+                Arc::new(Int32Array::from(vec![Some(1), Some(2), Some(3)])),
+                Arc::new(StructArray::from(vec![
+                    (
+                        Arc::new(Field::new("id", DataType::Int32, true)),
+                        Arc::new(Int32Array::from(vec![1, 2, 3])) as ArrayRef,
+                    ),
+                    (
+                        Arc::new(Field::new("lat", DataType::Int32, true)),
+                        Arc::new(Int32Array::from(vec![1, 2, 3])) as ArrayRef,
+                    ),
+                    (
+                        Arc::new(Field::new("long", DataType::Int32, true)),
+                        Arc::new(Int32Array::from(vec![1, 2, 3])) as ArrayRef,
+                    ),
+                ])),
+            ],
+        )
+        .unwrap();
+
+        let updated_batch = RecordBatch::try_new(
+            Arc::clone(&schema),
+            vec![
+                Arc::new(Int32Array::from(vec![Some(1), Some(12), Some(3)])),
+                Arc::new(StructArray::from(vec![
+                    (
+                        Arc::new(Field::new("id", DataType::Int32, true)),
+                        Arc::new(Int32Array::from(vec![1, 2, 3])) as ArrayRef,
+                    ),
+                    (
+                        Arc::new(Field::new("lat", DataType::Int32, true)),
+                        Arc::new(Int32Array::from(vec![1, 2, 3])) as ArrayRef,
+                    ),
+                    (
+                        Arc::new(Field::new("long", DataType::Int32, true)),
+                        Arc::new(Int32Array::from(vec![1, 2, 3])) as ArrayRef,
+                    ),
+                ])),
+            ],
+        )
+        .unwrap();
+
+        let ctx = SessionContext::new();
+        let before = ctx.read_batch(batch).expect("Failed to make DataFrame");
+        let after = ctx
+            .read_batch(updated_batch)
+            .expect("Failed to make DataFrame");
+
+        let diff = before
+            .except(after)
+            .expect("Failed to except")
+            .collect()
+            .await?;
+        assert_eq!(diff.len(), 1);
         Ok(())
     }
 
