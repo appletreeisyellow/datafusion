@@ -728,6 +728,42 @@ mod tests {
             ),
             (
                 vec![
+                    "2024-03-31T00:30:00Z",
+                    "2024-03-31T01:00:00Z",
+                    "2024-03-31T04:20:00Z",
+                    "2024-04-01T04:20:00Z",
+                    "2024-05-01T00:30:00Z",
+                ],
+                Some("Europe/Brussels".into()),
+                "1970-01-01T00:00:00Z",
+                vec![
+                    "2024-03-31T00:00:00+01:00",
+                    "2024-03-31T00:00:00+01:00",
+                    "2024-03-31T00:00:00+01:00",
+                    "2024-04-01T00:00:00+02:00",
+                    "2024-05-01T00:00:00+02:00",
+                ],
+            ),
+            (
+                vec![
+                    "2024-03-31T00:30:00",
+                    "2024-03-31T01:00:00",
+                    "2024-03-31T04:20:00",
+                    "2024-04-01T04:20:00",
+                    "2024-05-01T00:30:00",
+                ],
+                Some("Europe/Brussels".into()),
+                "1970-01-01T00:00:00Z",
+                vec![
+                    "2024-03-31T00:00:00+01:00",
+                    "2024-03-31T00:00:00+01:00",
+                    "2024-03-31T00:00:00+01:00",
+                    "2024-04-01T00:00:00+02:00",
+                    "2024-05-01T00:00:00+02:00",
+                ],
+            ),
+            (
+                vec![
                     "2020-09-08T00:00:00Z",
                     "2020-09-08T01:00:00Z",
                     "2020-09-08T02:00:00Z",
@@ -737,11 +773,11 @@ mod tests {
                 Some("-02".into()),
                 "1970-01-01T00:00:00Z",
                 vec![
-                    "2020-09-08T00:00:00Z",
-                    "2020-09-08T00:00:00Z",
-                    "2020-09-08T00:00:00Z",
-                    "2020-09-08T00:00:00Z",
-                    "2020-09-08T00:00:00Z",
+                    "2020-09-08T00:00:00-02:00",
+                    "2020-09-08T00:00:00-02:00",
+                    "2020-09-08T00:00:00-02:00",
+                    "2020-09-08T00:00:00-02:00",
+                    "2020-09-08T00:00:00-02:00",
                 ],
             ),
             (
@@ -755,11 +791,11 @@ mod tests {
                 Some("+05".into()),
                 "1970-01-01T00:00:00+05",
                 vec![
-                    "2020-09-08T00:00:00+05",
-                    "2020-09-08T00:00:00+05",
-                    "2020-09-08T00:00:00+05",
-                    "2020-09-08T00:00:00+05",
-                    "2020-09-08T00:00:00+05",
+                    "2020-09-07T19:00:00+05:00",
+                    "2020-09-07T19:00:00+05:00",
+                    "2020-09-07T19:00:00+05:00",
+                    "2020-09-07T19:00:00+05:00",
+                    "2020-09-07T19:00:00+05:00",
                 ],
             ),
             (
@@ -773,77 +809,14 @@ mod tests {
                 Some("+08".into()),
                 "1970-01-01T00:00:00+08",
                 vec![
-                    "2020-09-08T00:00:00+08",
-                    "2020-09-08T00:00:00+08",
-                    "2020-09-08T00:00:00+08",
-                    "2020-09-08T00:00:00+08",
-                    "2020-09-08T00:00:00+08",
+                    "2020-09-07T16:00:00+08:00",
+                    "2020-09-07T16:00:00+08:00",
+                    "2020-09-07T16:00:00+08:00",
+                    "2020-09-07T16:00:00+08:00",
+                    "2020-09-07T16:00:00+08:00",
                 ],
             ),
         ];
-
-        cases
-            .iter()
-            .for_each(|(original, tz_opt, origin, expected)| {
-                let input = original
-                    .iter()
-                    .map(|s| Some(string_to_timestamp_nanos(s).unwrap()))
-                    .collect::<TimestampNanosecondArray>()
-                    .with_timezone_opt(tz_opt.clone());
-                let right = expected
-                    .iter()
-                    .map(|s| Some(string_to_timestamp_nanos(s).unwrap()))
-                    .collect::<TimestampNanosecondArray>()
-                    .with_timezone_opt(tz_opt.clone());
-                let result = DateBinFunc::new()
-                    .invoke(&[
-                        ColumnarValue::Scalar(ScalarValue::new_interval_dt(1, 0)),
-                        ColumnarValue::Array(Arc::new(input)),
-                        ColumnarValue::Scalar(ScalarValue::TimestampNanosecond(
-                            Some(string_to_timestamp_nanos(origin).unwrap()),
-                            tz_opt.clone(),
-                        )),
-                    ])
-                    .unwrap();
-                if let ColumnarValue::Array(result) = result {
-                    assert_eq!(
-                        result.data_type(),
-                        &DataType::Timestamp(TimeUnit::Nanosecond, tz_opt.clone())
-                    );
-                    let left = arrow::array::cast::as_primitive_array::<
-                        TimestampNanosecondType,
-                    >(&result);
-                    assert_eq!(left, &right);
-                } else {
-                    panic!("unexpected column type");
-                }
-            });
-    }
-
-    #[test]
-    fn test_date_bin_timezones_daylight_saving_time() {
-        let cases = vec![(
-            vec![
-                "2024-03-31T00:00:00Z",
-                "2024-03-31T00:30:00Z",
-                "2024-03-31T01:00:00Z",
-                "2024-03-31T00:00:00Z",
-                "2024-03-31T04:20:00Z",
-                "2024-04-01T04:20:00Z",
-                "2024-05-01T00:30:00Z",
-            ],
-            Some("Europe/Brussels".into()),
-            "1970-01-01T00:00:00Z",
-            vec![
-                "2024-03-31T00:00:00+01:00",
-                "2024-03-31T00:00:00+01:00",
-                "2024-03-31T00:00:00+01:00",
-                "2024-03-31T00:00:00+01:00",
-                "2024-03-31T00:00:00+01:00",
-                "2024-04-01T00:00:00+02:00",
-                "2024-05-01T00:00:00+02:00",
-            ],
-        )];
 
         cases
             .iter()
